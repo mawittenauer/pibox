@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_NAME="pibox"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/${APP_NAME}"
+HOSTS_FILE="${HOSTS_FILE:-$CONFIG_DIR/hosts.conf}"
+
+# Commands shown in menu (label|ssh-command)
+COMMANDS=(
+  "SSH Shell|__SSH_SHELL__"
+  "Reboot|sudo -n reboot || sudo reboot"
+  "Power Off|sudo -n poweroff || sudo poweroff"
+  "Update (apt)|sudo -n apt update && sudo -n apt -y upgrade || (sudo apt update && sudo apt -y upgrade)"
+  "Uptime|uptime"
+  "Disk Usage|df -h"
+  "Memory|free -h"
+  "Docker ps|docker ps"
+  "Systemctl status|systemctl --no-pager --full status"
+)
+
+die() { echo "${APP_NAME}: $*" >&2; exit 1; }
+
+need() { command -v "$1" >/dev/null 2>&1 || die "Missing dependency: $1"; }
+
+need whiptail
+need ssh
+need awk
+need sed
+
+if [[ ! -f "$HOSTS_FILE" ]]; then
+  die "Hosts config not found: $HOSTS_FILE
+Create it like:
+  mkdir -p \"$CONFIG_DIR\"
+  nano \"$HOSTS_FILE\""
+fi
+
+mapfile -t HOST_LINES < <(grep -vE '^\s*($|#)' "$HOSTS_FILE" || true)
+[[ ${#HOST_LINES[@]} -gt 0 ]] || die "No hosts found in $HOSTS_FILE"
+
+HOST_MENU_ITEMS=()
+for line in "${HOST_LINES[@]}"; do
+  IFS='|' read -r name host user port <<<"$line"
+  [[ -n "${name:-}" && -n "${host:-}" ]] || continue
+  user="${user:-pi}"
+  port="${port:-22}"
+  HOST_MENU_ITEMS+=("$name" "$user@$host:$port")
+done
+
+choose_host() {
+  local choice
+  choice=$(whiptail --title "$APP_NAME" \
+    --menu "Select a host" 20 80 10 \
+    "${HOST_MENU_ITEMS[@]}" \
+    3>&1 1>&2 2>&3) || return 1
+
+  for line in "${HOST_LINES[@]}"; do
+    IFS='|' read -r name host user port <<<"$line"
+    if [[ "$name" == "$choice" ]]; then
+      echo "$name|${host}|${user:-pi}|${port:-22}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+choose_command() {
+  local cmd_menu=()
+  for entry in "${COMMANDS[@]}"; do
+    IFS='|' read -r label remote_cmd <<<"$entry"
+    cmd_menu+=("$label" "$remote_cmd")
+  done
+
+  local choice
+  choice=$(whiptail --title "$APP_NAME" \
+    --menu "Select a command" 20 80 12 \
+    "${cmd_menu[@]}" \
+    3>&1 1>&2 2>&3) || return 1
+
+  for entry in "${COMMANDS[@]}"; do
+    IFS='|' read -r label remote_cmd <<<"$entry"
+    if [[ "$label" == "$choice" ]]; then
+      echo "$label|$remote_cmd"
+      return 0
+    fi
+  done
+  return 1
+}
+
+run_ssh() {
+  local host="$1" user="$2" port="$3" remote_cmd="$4"
+  local target="${user}@${host}"
+
+  if [[ "$remote_cmd" == "__SSH_SHELL__" ]]; then
+    exec ssh -p "$port" "$target"
+  fi
+
+  local output
+  if output=$(ssh -p "$port" "$target" -- "$remote_cmd" 2>&1); then
+    whiptail --title "$APP_NAME" --scrolltext --msgbox "$output" 25 90
+  else
+    whiptail --title "$APP_NAME" --scrolltext --msgbox "Command failed:\n\n$output" 25 90
+  fi
+}
+
+while true; do
+  host_sel="$(choose_host)" || exit 0
+  IFS='|' read -r name host user port <<<"$host_sel"
+
+  while true; do
+    cmd_sel="$(choose_command)" || break
+    IFS='|' read -r label remote_cmd <<<"$cmd_sel"
+
+    if whiptail --title "$APP_NAME" --yesno "Run '$label' on '$name'?" 10 70; then
+      run_ssh "$host" "$user" "$port" "$remote_cmd"
+    fi
+
+    whiptail --title "$APP_NAME" --yesno "Pick another command for '$name'?" 10 70 || break
+  done
+
+  whiptail --title "$APP_NAME" --yesno "Manage another host?" 10 70 || exit 0
+done

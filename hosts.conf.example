@@ -1,0 +1,4 @@
+# name|hostname_or_ip|user|port
+pi-dev|pi-dev|pi|22
+pi-print|pi-print|pi|22
+pi-sensor|pi-sensor|pi|22
