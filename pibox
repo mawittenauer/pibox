@@ -145,23 +145,25 @@ set_fullpageos_url() {
   fi
 
   local output
-  if output=$(ssh -p "$port" "$target" -- bash -lc '
-    set -euo pipefail
-    url="$1"
+  if output=$(
+    ssh -p "$port" "$target" -- bash -s -- "$url" 2>&1 <<'EOF'
+set -euo pipefail
+url="$1"
 
-    # Common locations across FullPageOS builds
-    for f in /boot/firmware/fullpageos.txt /boot/fullpageos.txt; do
-      if [[ -f "$f" ]]; then
-        echo "$url" | sudo tee "$f" >/dev/null
-        echo "Updated: $f"
-        echo "New URL: $url"
-        exit 0
-      fi
-    done
+# Common locations across FullPageOS builds
+for f in /boot/firmware/fullpageos.txt /boot/fullpageos.txt; do
+  if [[ -f "$f" ]]; then
+    echo "$url" | sudo tee "$f" >/dev/null
+    echo "Updated: $f"
+    echo "New URL: $url"
+    exit 0
+  fi
+done
 
-    echo "Could not find fullpageos.txt at /boot/firmware/fullpageos.txt or /boot/fullpageos.txt" >&2
-    exit 1
-  ' -- "$url" 2>&1); then
+echo "Could not find fullpageos.txt at /boot/firmware/fullpageos.txt or /boot/fullpageos.txt" >&2
+exit 1
+EOF
+  ); then
     whiptail --title "$APP_NAME" --scrolltext --msgbox "$output" 18 100
 
     if whiptail --title "$APP_NAME" --yesno "Reboot now to apply the new URL?" 10 70; then
