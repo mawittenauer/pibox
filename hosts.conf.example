@@ -1,4 +1,4 @@
-# name|hostname_or_ip|user|port
-pi-dev|pi-dev|pi|22
-pi-print|pi-print|pi|22
-pi-sensor|pi-sensor|pi|22
+# name|hostname_or_ip|user|port|os
+pi-dev|pi-dev|pi|22|linux
+pi-print|pi-print|pi|22|linux
+pi-panel|pi-panel|pi|22|fullpageos
