@@ -5,8 +5,8 @@ APP_NAME="pibox"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/${APP_NAME}"
 HOSTS_FILE="${HOSTS_FILE:-$CONFIG_DIR/hosts.conf}"
 
-# Commands shown in menu (label|ssh-command)
-COMMANDS=(
+# Base commands shown for ALL OS types (label|ssh-command)
+BASE_COMMANDS=(
   "SSH Shell|__SSH_SHELL__"
   "Reboot|sudo -n reboot || sudo reboot"
   "Power Off|sudo -n poweroff || sudo poweroff"
@@ -14,18 +14,22 @@ COMMANDS=(
   "Uptime|uptime"
   "Disk Usage|df -h"
   "Memory|free -h"
-  "Docker ps|docker ps"
   "Systemctl status|systemctl --no-pager --full status"
 )
 
-die() { echo "${APP_NAME}: $*" >&2; exit 1; }
+# Extra commands for FullPageOS only
+FULLPAGEOS_COMMANDS=(
+  "Set FullPageOS URL|__SET_FULLPAGEOS_URL__"
+)
 
+die() { echo "${APP_NAME}: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "Missing dependency: $1"; }
 
 need whiptail
 need ssh
 need awk
 need sed
+need grep
 
 if [[ ! -f "$HOSTS_FILE" ]]; then
   die "Hosts config not found: $HOSTS_FILE
@@ -34,29 +38,33 @@ Create it like:
   nano \"$HOSTS_FILE\""
 fi
 
+# Load non-empty, non-comment lines
 mapfile -t HOST_LINES < <(grep -vE '^\s*($|#)' "$HOSTS_FILE" || true)
 [[ ${#HOST_LINES[@]} -gt 0 ]] || die "No hosts found in $HOSTS_FILE"
 
+# Build host menu items
 HOST_MENU_ITEMS=()
 for line in "${HOST_LINES[@]}"; do
-  IFS='|' read -r name host user port <<<"$line"
+  # name|host|user|port|os
+  IFS='|' read -r name host user port os <<<"$line"
   [[ -n "${name:-}" && -n "${host:-}" ]] || continue
   user="${user:-pi}"
   port="${port:-22}"
-  HOST_MENU_ITEMS+=("$name" "$user@$host:$port")
+  os="${os:-linux}"
+  HOST_MENU_ITEMS+=("$name" "$user@$host:$port ($os)")
 done
 
 choose_host() {
   local choice
   choice=$(whiptail --title "$APP_NAME" \
-    --menu "Select a host" 20 80 10 \
+    --menu "Select a host" 20 90 12 \
     "${HOST_MENU_ITEMS[@]}" \
     3>&1 1>&2 2>&3) || return 1
 
   for line in "${HOST_LINES[@]}"; do
-    IFS='|' read -r name host user port <<<"$line"
+    IFS='|' read -r name host user port os <<<"$line"
     if [[ "$name" == "$choice" ]]; then
-      echo "$name|${host}|${user:-pi}|${port:-22}"
+      echo "$name|${host}|${user:-pi}|${port:-22}|${os:-linux}"
       return 0
     fi
   done
@@ -64,29 +72,47 @@ choose_host() {
 }
 
 choose_command() {
+  local os="$1"
   local cmd_menu=()
-  for entry in "${COMMANDS[@]}"; do
+  local entry label remote_cmd
+
+  # Base commands for everyone
+  for entry in "${BASE_COMMANDS[@]}"; do
     IFS='|' read -r label remote_cmd <<<"$entry"
-    cmd_menu+=("$label" "$remote_cmd")
+    cmd_menu+=("$label" "")
   done
+
+  # Add OS-specific commands
+  if [[ "$os" == "fullpageos" ]]; then
+    for entry in "${FULLPAGEOS_COMMANDS[@]}"; do
+      IFS='|' read -r label remote_cmd <<<"$entry"
+      cmd_menu+=("$label" "")
+    done
+  fi
 
   local choice
   choice=$(whiptail --title "$APP_NAME" \
-    --menu "Select a command" 20 80 12 \
+    --menu "Select a command" 22 90 14 \
     "${cmd_menu[@]}" \
     3>&1 1>&2 2>&3) || return 1
 
-  for entry in "${COMMANDS[@]}"; do
+  # Resolve selected label to command
+  for entry in "${BASE_COMMANDS[@]}"; do
     IFS='|' read -r label remote_cmd <<<"$entry"
-    if [[ "$label" == "$choice" ]]; then
-      echo "$label|$remote_cmd"
-      return 0
-    fi
+    [[ "$label" == "$choice" ]] && { echo "$label|$remote_cmd"; return 0; }
   done
+
+  if [[ "$os" == "fullpageos" ]]; then
+    for entry in "${FULLPAGEOS_COMMANDS[@]}"; do
+      IFS='|' read -r label remote_cmd <<<"$entry"
+      [[ "$label" == "$choice" ]] && { echo "$label|$remote_cmd"; return 0; }
+    done
+  fi
+
   return 1
 }
 
-run_ssh() {
+run_ssh_cmd() {
   local host="$1" user="$2" port="$3" remote_cmd="$4"
   local target="${user}@${host}"
 
@@ -96,22 +122,73 @@ run_ssh() {
 
   local output
   if output=$(ssh -p "$port" "$target" -- "$remote_cmd" 2>&1); then
-    whiptail --title "$APP_NAME" --scrolltext --msgbox "$output" 25 90
+    whiptail --title "$APP_NAME" --scrolltext --msgbox "$output" 25 100
   else
-    whiptail --title "$APP_NAME" --scrolltext --msgbox "Command failed:\n\n$output" 25 90
+    whiptail --title "$APP_NAME" --scrolltext --msgbox "Command failed:\n\n$output" 25 100
+  fi
+}
+
+set_fullpageos_url() {
+  local host="$1" user="$2" port="$3"
+  local target="${user}@${host}"
+
+  local url
+  url=$(whiptail --title "$APP_NAME" \
+    --inputbox "Enter the URL for FullPageOS to open (include http:// or https://)" \
+    12 90 \
+    3>&1 1>&2 2>&3) || return 0
+
+  # Basic sanity check
+  if [[ -z "${url// }" ]]; then
+    whiptail --title "$APP_NAME" --msgbox "URL cannot be empty." 8 50
+    return 0
+  fi
+
+  local output
+  if output=$(ssh -p "$port" "$target" -- bash -lc '
+    set -euo pipefail
+    url="$1"
+
+    # Common locations across FullPageOS builds
+    for f in /boot/firmware/fullpageos.txt /boot/fullpageos.txt; do
+      if [[ -f "$f" ]]; then
+        echo "$url" | sudo tee "$f" >/dev/null
+        echo "Updated: $f"
+        echo "New URL: $url"
+        exit 0
+      fi
+    done
+
+    echo "Could not find fullpageos.txt at /boot/firmware/fullpageos.txt or /boot/fullpageos.txt" >&2
+    exit 1
+  ' -- "$url" 2>&1); then
+    whiptail --title "$APP_NAME" --scrolltext --msgbox "$output" 18 100
+
+    if whiptail --title "$APP_NAME" --yesno "Reboot now to apply the new URL?" 10 70; then
+      run_ssh_cmd "$host" "$user" "$port" "sudo -n reboot || sudo reboot"
+    fi
+  else
+    whiptail --title "$APP_NAME" --scrolltext --msgbox "Failed to set URL:\n\n$output" 20 100
   fi
 }
 
 while true; do
   host_sel="$(choose_host)" || exit 0
-  IFS='|' read -r name host user port <<<"$host_sel"
+  IFS='|' read -r name host user port os <<<"$host_sel"
 
   while true; do
-    cmd_sel="$(choose_command)" || break
+    cmd_sel="$(choose_command "$os")" || break
     IFS='|' read -r label remote_cmd <<<"$cmd_sel"
 
+    if [[ "$remote_cmd" == "__SET_FULLPAGEOS_URL__" ]]; then
+      if whiptail --title "$APP_NAME" --yesno "Set FullPageOS URL on '$name'?" 10 70; then
+        set_fullpageos_url "$host" "$user" "$port"
+      fi
+      continue
+    fi
+
     if whiptail --title "$APP_NAME" --yesno "Run '$label' on '$name'?" 10 70; then
-      run_ssh "$host" "$user" "$port" "$remote_cmd"
+      run_ssh_cmd "$host" "$user" "$port" "$remote_cmd"
     fi
 
     whiptail --title "$APP_NAME" --yesno "Pick another command for '$name'?" 10 70 || break
