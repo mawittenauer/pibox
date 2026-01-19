@@ -1,0 +1,17 @@
+{
+  "name": "pibox-api",
+  "version": "1.0.0",
+  "description": "REST API for pibox host configuration",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": ["pibox", "api", "raspberry-pi"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.0.3"
+  }
+}

@@ -1,0 +1,6 @@
+# pibox API tokens
+# One token per line. Lines starting with # are comments.
+# Generate tokens using: openssl rand -hex 32
+
+# Example token (change this!)
+my_secure_token_here_replace_with_actual_token_openssl_rand_hex_32

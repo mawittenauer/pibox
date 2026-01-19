@@ -112,6 +112,149 @@ You should connect without a password.
 
 ---
 
+## 🌐 Optional: REST API
+
+
+Expose your host configuration via a REST API with token-based authentication.
+
+### Installation
+
+#### 1) Install Node.js dependencies
+
+```bash
+cd api
+npm install
+```
+
+#### 2) Configure API tokens
+
+Generate a secure token:
+
+```bash
+openssl rand -hex 32
+```
+
+Create the API config file:
+
+```bash
+mkdir -p ~/.config/pibox
+nano ~/.config/pibox/api.conf
+```
+
+Add one or more tokens (one per line):
+
+```
+your_token_from_openssl_here_1
+another_token_from_openssl_here_2
+```
+
+#### 3) Run the API server
+
+```bash
+cd api
+npm start
+```
+
+The API will be available at `http://localhost:3000`
+
+For development with auto-reload:
+
+```bash
+npm run dev
+```
+
+### Running with systemctl (Linux)
+
+For production use, run the API as a systemd service.
+
+#### Create the systemd service file
+
+```bash
+sudo nano /etc/systemd/system/pibox-api.service
+```
+
+Add the following content (adjust paths and user as needed):
+
+```ini
+[Unit]
+Description=pibox REST API Server
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/pibox/api
+ExecStart=/usr/bin/node /home/pi/pibox/api/server.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+Environment="NODE_ENV=production"
+Environment="PORT=3000"
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Note:** Adjust `User`, `Group`, and paths to match your setup.
+
+#### Enable and start the service
+
+```bash
+# Reload systemd daemon
+sudo systemctl daemon-reload
+
+# Enable to start on boot
+sudo systemctl enable pibox-api
+
+# Start the service now
+sudo systemctl start pibox-api
+
+# Check status
+sudo systemctl status pibox-api
+
+# View logs
+sudo journalctl -u pibox-api -f
+```
+
+### API Endpoints
+
+All endpoints (except `/health`) require token authentication via the `Authorization` header:
+
+```
+Authorization: Bearer <your-token>
+```
+
+**Health Check** (no auth):
+```bash
+GET /health
+```
+
+**List all hosts**:
+```bash
+GET /api/hosts
+Authorization: Bearer <token>
+```
+
+**Get specific host**:
+```bash
+GET /api/hosts/{name}
+Authorization: Bearer <token>
+```
+
+Example with curl:
+
+```bash
+curl -H "Authorization: Bearer your_token_here" http://localhost:3000/api/hosts
+curl -H "Authorization: Bearer your_token_here" http://localhost:3000/api/hosts/pi-dev
+```
+
+See [api/README.md](api/README.md) for complete API documentation.
+
+---
+
 ## 🚀 Usage
 
 ```bash
