@@ -5,21 +5,21 @@ APP_NAME="pibox"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/${APP_NAME}"
 HOSTS_FILE="${HOSTS_FILE:-$CONFIG_DIR/hosts.conf}"
 
-# Base commands shown for ALL OS types (label|ssh-command)
+# Base commands shown for ALL OS types (label|command-id|ssh-command)
 BASE_COMMANDS=(
-  "SSH Shell|__SSH_SHELL__"
-  "Reboot|sudo -n reboot || sudo reboot"
-  "Power Off|sudo -n poweroff || sudo poweroff"
-  "Update (apt)|sudo -n apt update && sudo -n apt -y upgrade || (sudo apt update && sudo apt -y upgrade)"
-  "Uptime|uptime"
-  "Disk Usage|df -h"
-  "Memory|free -h"
-  "Systemctl status|systemctl --no-pager --full status"
+  "SSH Shell|ssh-shell|__SSH_SHELL__"
+  "Reboot|reboot|sudo -n reboot || sudo reboot"
+  "Power Off|poweroff|sudo -n poweroff || sudo poweroff"
+  "Update (apt)|update|sudo -n apt update && sudo -n apt -y upgrade || (sudo apt update && sudo apt -y upgrade)"
+  "Uptime|uptime|uptime"
+  "Disk Usage|disk-usage|df -h"
+  "Memory|memory|free -h"
+  "Systemctl status|systemctl|systemctl --no-pager --full status"
 )
 
 # Extra commands for FullPageOS only
 FULLPAGEOS_COMMANDS=(
-  "Set FullPageOS URL|__SET_FULLPAGEOS_URL__"
+  "Set FullPageOS URL|set-url|__SET_FULLPAGEOS_URL__"
 )
 
 die() { echo "${APP_NAME}: $*" >&2; exit 1; }
@@ -78,14 +78,14 @@ choose_command() {
 
   # Base commands for everyone
   for entry in "${BASE_COMMANDS[@]}"; do
-    IFS='|' read -r label remote_cmd <<<"$entry"
+    IFS='|' read -r label cmd_id remote_cmd <<<"$entry"
     cmd_menu+=("$label" "")
   done
 
   # Add OS-specific commands
   if [[ "$os" == "fullpageos" ]]; then
     for entry in "${FULLPAGEOS_COMMANDS[@]}"; do
-      IFS='|' read -r label remote_cmd <<<"$entry"
+      IFS='|' read -r label cmd_id remote_cmd <<<"$entry"
       cmd_menu+=("$label" "")
     done
   fi
@@ -98,17 +98,59 @@ choose_command() {
 
   # Resolve selected label to command
   for entry in "${BASE_COMMANDS[@]}"; do
-    IFS='|' read -r label remote_cmd <<<"$entry"
-    [[ "$label" == "$choice" ]] && { echo "$label|$remote_cmd"; return 0; }
+    IFS='|' read -r label cmd_id remote_cmd <<<"$entry"
+    [[ "$label" == "$choice" ]] && { echo "$label|$cmd_id|$remote_cmd"; return 0; }
   done
 
   if [[ "$os" == "fullpageos" ]]; then
     for entry in "${FULLPAGEOS_COMMANDS[@]}"; do
-      IFS='|' read -r label remote_cmd <<<"$entry"
-      [[ "$label" == "$choice" ]] && { echo "$label|$remote_cmd"; return 0; }
+      IFS='|' read -r label cmd_id remote_cmd <<<"$entry"
+      [[ "$label" == "$choice" ]] && { echo "$label|$cmd_id|$remote_cmd"; return 0; }
     done
   fi
 
+  return 1
+}
+
+# Get command by ID
+get_command_by_id() {
+  local cmd_id="$1" os="$2"
+  
+  # Search base commands
+  for entry in "${BASE_COMMANDS[@]}"; do
+    IFS='|' read -r label entry_id remote_cmd <<<"$entry"
+    if [[ "$entry_id" == "$cmd_id" ]]; then
+      echo "$label|$entry_id|$remote_cmd"
+      return 0
+    fi
+  done
+  
+  # Search OS-specific commands
+  if [[ "$os" == "fullpageos" ]]; then
+    for entry in "${FULLPAGEOS_COMMANDS[@]}"; do
+      IFS='|' read -r label entry_id remote_cmd <<<"$entry"
+      if [[ "$entry_id" == "$cmd_id" ]]; then
+        echo "$label|$entry_id|$remote_cmd"
+        return 0
+      fi
+    done
+  fi
+  
+  return 1
+}
+
+# Get host by name
+get_host_by_name() {
+  local search_name="$1"
+  
+  for line in "${HOST_LINES[@]}"; do
+    IFS='|' read -r name host user port os <<<"$line"
+    if [[ "$name" == "$search_name" ]]; then
+      echo "$name|${host}|${user:-pi}|${port:-22}|${os:-linux}"
+      return 0
+    fi
+  done
+  
   return 1
 }
 
@@ -174,27 +216,134 @@ EOF
   fi
 }
 
-while true; do
-  host_sel="$(choose_host)" || exit 0
-  IFS='|' read -r name host user port os <<<"$host_sel"
+# Show help/usage
+show_help() {
+  cat <<EOF
+Usage: $APP_NAME [OPTIONS] [HOST] [COMMAND]
 
-  while true; do
-    cmd_sel="$(choose_command "$os")" || break
-    IFS='|' read -r label remote_cmd <<<"$cmd_sel"
+Interactive mode (no arguments):
+  $APP_NAME
 
-    if [[ "$remote_cmd" == "__SET_FULLPAGEOS_URL__" ]]; then
-      if whiptail --title "$APP_NAME" --yesno "Set FullPageOS URL on '$name'?" 10 70; then
-        set_fullpageos_url "$host" "$user" "$port"
-      fi
-      continue
-    fi
+Standalone CLI mode:
+  $APP_NAME HOST COMMAND
+  $APP_NAME --host HOST --command COMMAND
 
-    if whiptail --title "$APP_NAME" --yesno "Run '$label' on '$name'?" 10 70; then
-      run_ssh_cmd "$host" "$user" "$port" "$remote_cmd"
-    fi
-
-    whiptail --title "$APP_NAME" --yesno "Pick another command for '$name'?" 10 70 || break
+Available commands:
+EOF
+  
+  for entry in "${BASE_COMMANDS[@]}"; do
+    IFS='|' read -r label cmd_id remote_cmd <<<"$entry"
+    echo "  - $cmd_id ($label)"
   done
+  
+  # Check if we have FullPageOS hosts
+  if grep -q "|fullpageos$\|.*|fullpageos$" "$HOSTS_FILE" 2>/dev/null; then
+    echo ""
+    echo "FullPageOS-specific commands:"
+    for entry in "${FULLPAGEOS_COMMANDS[@]}"; do
+      IFS='|' read -r label cmd_id remote_cmd <<<"$entry"
+      echo "  - $cmd_id ($label)"
+    done
+  fi
+  
+  echo ""
+  echo "Available hosts:"
+  for line in "${HOST_LINES[@]}"; do
+    IFS='|' read -r name host user port os <<<"$line"
+    echo "  - $name"
+  done
+}
 
-  whiptail --title "$APP_NAME" --yesno "Manage another host?" 10 70 || exit 0
-done
+# Execute command non-interactively
+execute_command_cli() {
+  local host_name="$1" cmd_id="$2"
+  
+  # Get host info
+  local host_info
+  host_info=$(get_host_by_name "$host_name") || {
+    echo "Error: Host '$host_name' not found" >&2
+    return 1
+  }
+  
+  IFS='|' read -r name host user port os <<<"$host_info"
+  
+  # Get command info
+  local cmd_info
+  cmd_info=$(get_command_by_id "$cmd_id" "$os") || {
+    echo "Error: Command '$cmd_id' not found for host '$host_name' (OS: $os)" >&2
+    return 1
+  }
+  
+  IFS='|' read -r label entry_id remote_cmd <<<"$cmd_info"
+  
+  # Execute special commands
+  if [[ "$remote_cmd" == "__SSH_SHELL__" ]]; then
+    exec ssh -p "$port" "${user}@${host}"
+  elif [[ "$remote_cmd" == "__SET_FULLPAGEOS_URL__" ]]; then
+    echo "Error: set-url requires interactive mode" >&2
+    return 1
+  fi
+  
+  # Execute regular SSH command
+  local output
+  if output=$(ssh -p "$port" "${user}@${host}" -- "$remote_cmd" 2>&1); then
+    echo "$output"
+    return 0
+  else
+    echo "$output" >&2
+    return 1
+  fi
+}
+
+# Interactive mode
+interactive_mode() {
+  while true; do
+    host_sel="$(choose_host)" || exit 0
+    IFS='|' read -r name host user port os <<<"$host_sel"
+
+    while true; do
+      cmd_sel="$(choose_command "$os")" || break
+      IFS='|' read -r label cmd_id remote_cmd <<<"$cmd_sel"
+
+      if [[ "$remote_cmd" == "__SET_FULLPAGEOS_URL__" ]]; then
+        if whiptail --title "$APP_NAME" --yesno "Set FullPageOS URL on '$name'?" 10 70; then
+          set_fullpageos_url "$host" "$user" "$port"
+        fi
+        continue
+      fi
+
+      if whiptail --title "$APP_NAME" --yesno "Run '$label' on '$name'?" 10 70; then
+        run_ssh_cmd "$host" "$user" "$port" "$remote_cmd"
+      fi
+
+      whiptail --title "$APP_NAME" --yesno "Pick another command for '$name'?" 10 70 || break
+    done
+
+    whiptail --title "$APP_NAME" --yesno "Manage another host?" 10 70 || exit 0
+  done
+}
+
+# Main entry point
+if [[ $# -eq 0 ]]; then
+  # Interactive mode
+  interactive_mode
+else
+  # CLI mode
+  case "$1" in
+    --help|-h)
+      show_help
+      ;;
+    *)
+      # pibox HOST COMMAND
+      if [[ $# -eq 2 ]]; then
+        execute_command_cli "$1" "$2" || exit 1
+      elif [[ $# -eq 4 && "$1" == "--host" && "$3" == "--command" ]]; then
+        execute_command_cli "$2" "$4" || exit 1
+      else
+        echo "Invalid arguments" >&2
+        show_help >&2
+        exit 1
+      fi
+      ;;
+  esac
+fi
