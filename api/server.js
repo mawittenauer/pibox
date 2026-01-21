@@ -2,12 +2,17 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOSTS_FILE = process.env.HOSTS_FILE || path.join(process.env.HOME, '.config/pibox/hosts.conf');
 const API_CONFIG_FILE = process.env.API_CONFIG_FILE || path.join(process.env.HOME, '.config/pibox/api.conf');
+const PIBOX_SCRIPT = process.env.PIBOX_SCRIPT || path.join(__dirname, '..', 'pibox');
+
+const execFileAsync = promisify(execFile);
 
 // Middleware
 app.use(express.json());
@@ -83,6 +88,32 @@ function authenticateToken(req, res, next) {
   next();
 }
 
+// Execute a pibox command via the CLI script
+async function executePiboxCommand(hostName, commandId) {
+  try {
+    if (!fs.existsSync(PIBOX_SCRIPT)) {
+      throw new Error(`pibox script not found at ${PIBOX_SCRIPT}`);
+    }
+
+    // Execute: bash pibox HOST COMMAND
+    const { stdout, stderr } = await execFileAsync('bash', [PIBOX_SCRIPT, hostName, commandId], {
+      timeout: 60000, // 60 second timeout
+      env: { ...process.env, HOSTS_FILE }
+    });
+
+    return {
+      success: true,
+      output: stdout
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message,
+      stderr: err.stderr || ''
+    };
+  }
+}
+
 // Health check endpoint (no auth required)
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -122,6 +153,44 @@ app.get('/api/hosts/:name', authenticateToken, (req, res) => {
       success: true,
       host
     });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+// Reboot a host
+app.post('/api/hosts/:name/reboot', authenticateToken, async (req, res) => {
+  try {
+    const hosts = loadHosts();
+    const host = hosts.find(h => h.name === req.params.name);
+
+    if (!host) {
+      return res.status(404).json({
+        success: false,
+        error: `Host '${req.params.name}' not found`
+      });
+    }
+
+    const result = await executePiboxCommand(req.params.name, 'reboot');
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: `Reboot command sent to ${req.params.name}`,
+        host: req.params.name,
+        command: 'reboot',
+        output: result.output
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error,
+        stderr: result.stderr
+      });
+    }
   } catch (err) {
     res.status(500).json({
       success: false,
