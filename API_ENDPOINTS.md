@@ -247,6 +247,62 @@ Get the systemctl status of the specified host. Requires authentication.
 
 ---
 
+### Set FullPageOS URL
+
+**POST** `/api/hosts/:name/set-url`
+
+Update the URL for FullPageOS servers. Only available for hosts with OS type `fullpageos`. Requires authentication.
+
+**Parameters:**
+- `name` (path) - Host name as defined in hosts.conf
+
+**Request Body:**
+```json
+{
+  "url": "https://example.com"
+}
+```
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "message": "FullPageOS URL updated on display",
+  "host": "display",
+  "command": "set-url",
+  "url": "https://example.com",
+  "output": "Updated: /boot/firmware/fullpageos.txt\nNew URL: https://example.com"
+}
+```
+
+**Response (Error - Not FullPageOS):**
+```json
+{
+  "success": false,
+  "error": "Host 'mypi' is not a FullPageOS server (OS: linux)"
+}
+```
+
+**Response (Error - Invalid URL):**
+```json
+{
+  "success": false,
+  "error": "URL must start with http:// or https://"
+}
+```
+
+**Response (Error - SSH Failure):**
+```json
+{
+  "success": false,
+  "error": "Failed to update URL on host",
+  "details": "Connection refused",
+  "stderr": "ssh: connect to host 192.168.1.101 port 22: Connection refused"
+}
+```
+
+---
+
 ## Testing
 
 ### 1. Create API Token
@@ -313,6 +369,13 @@ curl -X POST \
 curl -X POST \
   -H "Authorization: Bearer $TOKEN" \
   "$API_URL/api/hosts/mypi/poweroff"
+
+# Update FullPageOS URL (for FullPageOS hosts only)
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com"}' \
+  "$API_URL/api/hosts/display/set-url"
 ```
 
 ### 5. Batch Testing
@@ -345,10 +408,10 @@ The following commands can be executed via the API:
 - `reboot` - Reboot the host
 - `poweroff` - Power off the host
 - `update` - Run apt update and upgrade
+- `set-url` - Set FullPageOS URL (FullPageOS hosts only)
 
 **Interactive-only Commands (not available via API):**
 - `ssh-shell` - Open SSH shell (use SSH directly instead)
-- `set-url` - Set FullPageOS URL (FullPageOS hosts only)
 
 ---
 
