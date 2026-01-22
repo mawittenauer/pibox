@@ -423,6 +423,98 @@ app.get('/api/hosts/:name/systemctl', authenticateToken, async (req, res) => {
   }
 });
 
+// Set FullPageOS URL
+app.post('/api/hosts/:name/set-url', authenticateToken, async (req, res) => {
+  try {
+    const hosts = loadHosts();
+    const host = hosts.find(h => h.name === req.params.name);
+
+    if (!host) {
+      return res.status(404).json({
+        success: false,
+        error: `Host '${req.params.name}' not found`
+      });
+    }
+
+    // Check if host is FullPageOS
+    if (host.os !== 'fullpageos') {
+      return res.status(400).json({
+        success: false,
+        error: `Host '${req.params.name}' is not a FullPageOS server (OS: ${host.os})`
+      });
+    }
+
+    // Get URL from request body
+    const { url } = req.body;
+
+    if (!url || typeof url !== 'string' || !url.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'URL is required and must be a non-empty string'
+      });
+    }
+
+    // Basic URL validation
+    if (!url.toLowerCase().startsWith('http://') && !url.toLowerCase().startsWith('https://')) {
+      return res.status(400).json({
+        success: false,
+        error: 'URL must start with http:// or https://'
+      });
+    }
+
+    // Execute the URL update via SSH
+    const { execFile } = require('child_process');
+    const { promisify } = require('util');
+    const execFileAsync = promisify(execFile);
+
+    try {
+      const { stdout, stderr } = await execFileAsync('bash', ['-c', `
+ssh -p ${host.port} ${host.user}@${host.hostname} -- bash -s -- "${url.replace(/"/g, '\\"')}" 2>&1 <<'SSHEOF'
+set -euo pipefail
+url="$1"
+
+# Common locations across FullPageOS builds
+for f in /boot/firmware/fullpageos.txt /boot/fullpageos.txt; do
+  if [[ -f "$f" ]]; then
+    echo "$url" | sudo tee "$f" >/dev/null
+    echo "Updated: $f"
+    echo "New URL: $url"
+    exit 0
+  fi
+done
+
+echo "Could not find fullpageos.txt at /boot/firmware/fullpageos.txt or /boot/fullpageos.txt" >&2
+exit 1
+SSHEOF
+      `], {
+        timeout: 60000,
+        env: { ...process.env }
+      });
+
+      res.json({
+        success: true,
+        message: `FullPageOS URL updated on ${req.params.name}`,
+        host: req.params.name,
+        command: 'set-url',
+        url: url,
+        output: stdout.trim()
+      });
+    } catch (sshErr) {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to update URL on host',
+        details: sshErr.message,
+        stderr: sshErr.stderr || ''
+      });
+    }
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Error:', err);
