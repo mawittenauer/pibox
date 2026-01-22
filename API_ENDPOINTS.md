@@ -119,6 +119,134 @@ Send a reboot command to the specified host. Requires authentication.
 
 ---
 
+### Power Off Host
+
+**POST** `/api/hosts/:name/poweroff`
+
+Send a power off command to the specified host. Requires authentication.
+
+**Parameters:**
+- `name` (path) - Host name as defined in hosts.conf
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "message": "Power off command sent to mypi",
+  "host": "mypi",
+  "command": "poweroff",
+  "output": "Connection to 192.168.1.100 closed by remote host."
+}
+```
+
+---
+
+### Update Packages
+
+**POST** `/api/hosts/:name/update`
+
+Run `apt update && apt upgrade` on the specified host. Requires authentication.
+
+**Parameters:**
+- `name` (path) - Host name as defined in hosts.conf
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "message": "Update command executed on mypi",
+  "host": "mypi",
+  "command": "update",
+  "output": "Hit:1 http://raspbian.raspberrypi.org/raspbian bullseye InRelease\n..."
+}
+```
+
+---
+
+### Get Uptime
+
+**GET** `/api/hosts/:name/uptime`
+
+Get the uptime of the specified host. Requires authentication.
+
+**Parameters:**
+- `name` (path) - Host name as defined in hosts.conf
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "host": "mypi",
+  "command": "uptime",
+  "output": " 12:34:56 up 45 days,  2:15,  2 users,  load average: 0.15, 0.10, 0.08"
+}
+```
+
+---
+
+### Get Disk Usage
+
+**GET** `/api/hosts/:name/disk-usage`
+
+Get the disk usage of the specified host. Requires authentication.
+
+**Parameters:**
+- `name` (path) - Host name as defined in hosts.conf
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "host": "mypi",
+  "command": "disk-usage",
+  "output": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/root       29G  4.5G   23G  16% /\ndevtmpfs        427M     0  427M   0% /dev\ntmpfs           486M     0  486M   0% /dev/shm\n..."
+}
+```
+
+---
+
+### Get Memory Usage
+
+**GET** `/api/hosts/:name/memory`
+
+Get the memory usage of the specified host. Requires authentication.
+
+**Parameters:**
+- `name` (path) - Host name as defined in hosts.conf
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "host": "mypi",
+  "command": "memory",
+  "output": "              total        used        free      shared  buff/cache   available\nMem:        1014Mi       150Mi       650Mi        12Mi       213Mi       803Mi\nSwap:        100Mi         0B       100Mi"
+}
+```
+
+---
+
+### Get Systemctl Status
+
+**GET** `/api/hosts/:name/systemctl`
+
+Get the systemctl status of the specified host. Requires authentication.
+
+**Parameters:**
+- `name` (path) - Host name as defined in hosts.conf
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "host": "mypi",
+  "command": "systemctl",
+  "output": "State: running\nJobs: 0 queued\nFailed: 0 units\nSince: Mon 2026-01-20 10:15:30 GMT; 45 days ago\nCPUs: 4\nMemory: 150.1M\nMemory Limit: infinity\nTasks: 125\nCGroup: /\n..."
+}
+```
+
+---
+
 ## Testing
 
 ### 1. Create API Token
@@ -163,29 +291,64 @@ curl -X POST \
 API_URL="http://localhost:3000"
 TOKEN="your-api-token"
 
-# Reboot a Raspberry Pi
+# Get system status
+curl -H "Authorization: Bearer $TOKEN" \
+  "$API_URL/api/hosts/mypi/uptime"
+
+curl -H "Authorization: Bearer $TOKEN" \
+  "$API_URL/api/hosts/mypi/memory"
+
+curl -H "Authorization: Bearer $TOKEN" \
+  "$API_URL/api/hosts/mypi/disk-usage"
+
+# Execute actions
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  "$API_URL/api/hosts/mypi/update"
+
 curl -X POST \
   -H "Authorization: Bearer $TOKEN" \
   "$API_URL/api/hosts/mypi/reboot"
+
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  "$API_URL/api/hosts/mypi/poweroff"
+```
+
+### 5. Batch Testing
+
+Use the included test script to test all endpoints:
+
+```bash
+cd /path/to/pibox/api
+
+# Set variables and run tests
+API_URL="http://localhost:3000" \
+TOKEN="your-api-token" \
+HOST="mypi" \
+bash test-endpoints.sh
 ```
 
 ---
 
 ## Available Commands
 
-The following commands can be executed via the API (currently only `reboot` has an endpoint, but more can be added):
+The following commands can be executed via the API:
 
-- `ssh-shell` - Open SSH shell
+**Query/Status Commands (GET):**
+- `uptime` - Show system uptime
+- `disk-usage` - Show disk usage (df -h)
+- `memory` - Show memory usage (free -h)
+- `systemctl` - Show systemctl status
+
+**Action Commands (POST):**
 - `reboot` - Reboot the host
 - `poweroff` - Power off the host
 - `update` - Run apt update and upgrade
-- `uptime` - Show system uptime
-- `disk-usage` - Show disk usage
-- `memory` - Show memory usage
-- `systemctl` - Show systemctl status
 
-For FullPageOS hosts:
-- `set-url` - Set the URL for FullPageOS (interactive only)
+**Interactive-only Commands (not available via API):**
+- `ssh-shell` - Open SSH shell (use SSH directly instead)
+- `set-url` - Set FullPageOS URL (FullPageOS hosts only)
 
 ---
 
