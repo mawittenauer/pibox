@@ -199,6 +199,230 @@ app.post('/api/hosts/:name/reboot', authenticateToken, async (req, res) => {
   }
 });
 
+// Power off a host
+app.post('/api/hosts/:name/poweroff', authenticateToken, async (req, res) => {
+  try {
+    const hosts = loadHosts();
+    const host = hosts.find(h => h.name === req.params.name);
+
+    if (!host) {
+      return res.status(404).json({
+        success: false,
+        error: `Host '${req.params.name}' not found`
+      });
+    }
+
+    const result = await executePiboxCommand(req.params.name, 'poweroff');
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: `Power off command sent to ${req.params.name}`,
+        host: req.params.name,
+        command: 'poweroff',
+        output: result.output
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error,
+        stderr: result.stderr
+      });
+    }
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+// Update packages on a host
+app.post('/api/hosts/:name/update', authenticateToken, async (req, res) => {
+  try {
+    const hosts = loadHosts();
+    const host = hosts.find(h => h.name === req.params.name);
+
+    if (!host) {
+      return res.status(404).json({
+        success: false,
+        error: `Host '${req.params.name}' not found`
+      });
+    }
+
+    const result = await executePiboxCommand(req.params.name, 'update');
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: `Update command executed on ${req.params.name}`,
+        host: req.params.name,
+        command: 'update',
+        output: result.output
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error,
+        stderr: result.stderr
+      });
+    }
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+// Get uptime for a host
+app.get('/api/hosts/:name/uptime', authenticateToken, async (req, res) => {
+  try {
+    const hosts = loadHosts();
+    const host = hosts.find(h => h.name === req.params.name);
+
+    if (!host) {
+      return res.status(404).json({
+        success: false,
+        error: `Host '${req.params.name}' not found`
+      });
+    }
+
+    const result = await executePiboxCommand(req.params.name, 'uptime');
+
+    if (result.success) {
+      res.json({
+        success: true,
+        host: req.params.name,
+        command: 'uptime',
+        output: result.output.trim()
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error,
+        stderr: result.stderr
+      });
+    }
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+// Get disk usage for a host
+app.get('/api/hosts/:name/disk-usage', authenticateToken, async (req, res) => {
+  try {
+    const hosts = loadHosts();
+    const host = hosts.find(h => h.name === req.params.name);
+
+    if (!host) {
+      return res.status(404).json({
+        success: false,
+        error: `Host '${req.params.name}' not found`
+      });
+    }
+
+    const result = await executePiboxCommand(req.params.name, 'disk-usage');
+
+    if (result.success) {
+      res.json({
+        success: true,
+        host: req.params.name,
+        command: 'disk-usage',
+        output: result.output.trim()
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error,
+        stderr: result.stderr
+      });
+    }
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+// Get memory usage for a host
+app.get('/api/hosts/:name/memory', authenticateToken, async (req, res) => {
+  try {
+    const hosts = loadHosts();
+    const host = hosts.find(h => h.name === req.params.name);
+
+    if (!host) {
+      return res.status(404).json({
+        success: false,
+        error: `Host '${req.params.name}' not found`
+      });
+    }
+
+    const result = await executePiboxCommand(req.params.name, 'memory');
+
+    if (result.success) {
+      res.json({
+        success: true,
+        host: req.params.name,
+        command: 'memory',
+        output: result.output.trim()
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error,
+        stderr: result.stderr
+      });
+    }
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+// Get systemctl status for a host
+app.get('/api/hosts/:name/systemctl', authenticateToken, async (req, res) => {
+  try {
+    const hosts = loadHosts();
+    const host = hosts.find(h => h.name === req.params.name);
+
+    if (!host) {
+      return res.status(404).json({
+        success: false,
+        error: `Host '${req.params.name}' not found`
+      });
+    }
+
+    const result = await executePiboxCommand(req.params.name, 'systemctl');
+
+    if (result.success) {
+      res.json({
+        success: true,
+        host: req.params.name,
+        command: 'systemctl',
+        output: result.output.trim()
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error,
+        stderr: result.stderr
+      });
+    }
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Error:', err);
